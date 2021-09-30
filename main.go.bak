@@ -1,0 +1,63 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+func main() {
+	tr := NewTracker()
+	go tr.Run()
+	_ = tr.Event(context.Background(), "test1")
+	_ = tr.Event(context.Background(), "test2")
+	_ = tr.Event(context.Background(), "test3")
+	// fmt.Println("开始3s等待")
+	// time.Sleep(3 * time.Second)
+	// fmt.Println("结束3s等待")
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(6*time.Second))
+	defer cancel()
+	tr.Shutdown(ctx)
+}
+
+func NewTracker() *Tracker {
+	return &Tracker{
+		ch:   make(chan string, 10),
+		stop: make(chan struct{}),
+	}
+}
+
+type Tracker struct {
+	ch   chan string
+	stop chan struct{}
+}
+
+func (t *Tracker) Event(ctx context.Context, data string) error {
+	select {
+	case t.ch <- data:
+		fmt.Println("写入data:", data)
+		return nil
+	case <-ctx.Done():
+		fmt.Println("超时")
+		return ctx.Err()
+	}
+}
+
+func (t *Tracker) Run() {
+	for data := range t.ch {
+		// time.Sleep(1 * time.Second)
+		fmt.Println("Run: ", data)
+	}
+	fmt.Println("结束1")
+	t.stop <- struct{}{}
+}
+
+func (t *Tracker) Shutdown(ctx context.Context) {
+	close(t.ch)
+	select {
+	case <-t.stop:
+		fmt.Println("结束2")
+	case <-ctx.Done():
+		fmt.Println("超时结束")
+	}
+}
